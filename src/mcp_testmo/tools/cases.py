@@ -234,6 +234,93 @@ async def update_case(client: TestmoClient, args: dict[str, Any]) -> Any:
 
 
 @register_tool(
+    name="testmo_batch_update_cases",
+    description="""Bulk update up to 100 test cases with the same field values (PATCH).
+
+Applies the same changes to all specified case IDs. Useful for:
+- Moving cases to a new folder
+- Updating priority, state, or status in bulk
+- Linking automation sources to manual test cases via automation_links
+- Adding tags or issue links to multiple cases at once
+
+Note: When updating cases with different templates, custom fields must
+exist in ALL templates or a 422 error is returned.""",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "project_id": {
+                "type": "integer",
+                "description": "The project ID",
+            },
+            "ids": {
+                "type": "array",
+                "items": {"type": "integer"},
+                "description": "Array of case IDs to update (max 100)",
+            },
+            "folder_id": {
+                "type": "integer",
+                "description": "Target folder ID",
+            },
+            "state_id": {
+                "type": "integer",
+                "description": "State ID (1=Draft, 2=Review, 3=Approved, 4=Active, 5=Deprecated)",
+            },
+            "status_id": {
+                "type": "integer",
+                "description": "Status ID to apply",
+            },
+            "estimate": {
+                "type": "integer",
+                "description": "Estimated execution duration",
+            },
+            "custom_priority": {
+                "type": "integer",
+                "description": "Priority ID (52=Critical, 1=High, 2=Medium, 3=Low)",
+            },
+            "automation_links": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "automation_source_id": {"type": "integer"},
+                        "automation_case_id": {"type": "string"},
+                        "name": {"type": "string"},
+                    },
+                },
+                "description": "Automation links to associate (automation_source_id, automation_case_id, name)",
+            },
+            "tags": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Tags to apply",
+            },
+            "issues": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "display_id": {"type": "string"},
+                        "integration_id": {"type": "integer"},
+                        "connection_project_id": {},
+                    },
+                },
+                "description": "Issue links (display_id, integration_id, connection_project_id)",
+            },
+        },
+        "required": ["project_id", "ids"],
+    },
+)
+async def batch_update_cases(client: TestmoClient, args: dict[str, Any]) -> Any:
+    """Bulk update test cases with the same field values."""
+    project_id = args["project_id"]
+    ids = args["ids"]
+    # Extract update fields (everything except project_id and ids)
+    skip_keys = {"project_id", "ids"}
+    data = {k: v for k, v in args.items() if k not in skip_keys and v is not None}
+    return await client.batch_update_cases(project_id, ids, data)
+
+
+@register_tool(
     name="testmo_delete_case",
     description="Delete a test case.",
     input_schema={

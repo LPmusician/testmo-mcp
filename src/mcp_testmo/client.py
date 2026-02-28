@@ -574,6 +574,34 @@ class TestmoClient:
         )
         return result.get("result", result)
 
+    async def batch_update_cases(
+        self,
+        project_id: int,
+        ids: list[int],
+        data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Bulk update up to 100 test cases with the same field values.
+
+        Args:
+            project_id: The project ID.
+            ids: List of case IDs to update (max 100).
+            data: Fields to apply to all cases (folder_id, state_id,
+                  custom_priority, tags, issues, automation_links, etc.).
+
+        Returns:
+            List of updated case objects.
+        """
+        payload: dict[str, Any] = {"ids": ids}
+        payload.update(data)
+
+        result = await self._request(
+            "PATCH",
+            f"/projects/{project_id}/cases",
+            data=payload,
+        )
+        return result.get("result", result)
+
     async def delete_case(self, project_id: int, case_id: int) -> dict[str, Any]:
         """
         Delete a test case.
@@ -1049,6 +1077,228 @@ class TestmoClient:
             params=params if params else None,
         )
         return result.get("result", result)
+
+    async def create_automation_run(
+        self,
+        project_id: int,
+        name: str,
+        source: str,
+        config: str | None = None,
+        config_id: int | None = None,
+        milestone: str | None = None,
+        milestone_id: int | None = None,
+        tags: list[str] | None = None,
+        artifacts: list[dict[str, Any]] | None = None,
+        fields: list[dict[str, Any]] | None = None,
+        links: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Create a new automation run.
+
+        Args:
+            project_id: The project ID.
+            name: Name of the automation run.
+            source: Name of the automation source (auto-created if new).
+            config: Configuration name (optional).
+            config_id: Configuration ID (takes precedence over config).
+            milestone: Milestone name (optional).
+            milestone_id: Milestone ID (takes precedence over milestone).
+            tags: List of tags for the run.
+            artifacts: List of artifact objects (name, url, mime_type, size).
+            fields: List of field objects (name, type, value).
+            links: List of link objects (name, url).
+
+        Returns:
+            Dict with the created run ID: {"id": <int>}.
+        """
+        data: dict[str, Any] = {"name": name, "source": source}
+        if config is not None:
+            data["config"] = config
+        if config_id is not None:
+            data["config_id"] = config_id
+        if milestone is not None:
+            data["milestone"] = milestone
+        if milestone_id is not None:
+            data["milestone_id"] = milestone_id
+        if tags:
+            data["tags"] = tags
+        if artifacts:
+            data["artifacts"] = artifacts
+        if fields:
+            data["fields"] = fields
+        if links:
+            data["links"] = links
+
+        return await self._request(
+            "POST",
+            f"/projects/{project_id}/automation/runs",
+            data=data,
+        )
+
+    async def append_automation_run(
+        self,
+        automation_run_id: int,
+        artifacts: list[dict[str, Any]] | None = None,
+        fields: list[dict[str, Any]] | None = None,
+        links: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Append artifacts, fields, or links to an existing automation run.
+
+        Args:
+            automation_run_id: The automation run ID.
+            artifacts: List of artifact objects to append.
+            fields: List of field objects to append.
+            links: List of link objects to append.
+
+        Returns:
+            Success status (HTTP 204).
+        """
+        data: dict[str, Any] = {}
+        if artifacts:
+            data["artifacts"] = artifacts
+        if fields:
+            data["fields"] = fields
+        if links:
+            data["links"] = links
+
+        return await self._request(
+            "POST",
+            f"/automation/runs/{automation_run_id}/append",
+            data=data,
+        )
+
+    async def complete_automation_run(
+        self,
+        automation_run_id: int,
+        measure_elapsed: bool | None = None,
+    ) -> dict[str, Any]:
+        """
+        Mark an automation run as completed.
+
+        Args:
+            automation_run_id: The automation run ID.
+            measure_elapsed: Auto-set execution time from creation to completion.
+
+        Returns:
+            Success status (HTTP 204).
+        """
+        data: dict[str, Any] = {}
+        if measure_elapsed is not None:
+            data["measure_elapsed"] = measure_elapsed
+
+        return await self._request(
+            "POST",
+            f"/automation/runs/{automation_run_id}/complete",
+            data=data if data else None,
+        )
+
+    async def create_automation_run_thread(
+        self,
+        automation_run_id: int,
+        elapsed_observed: int | None = None,
+        elapsed_computed: int | None = None,
+        artifacts: list[dict[str, Any]] | None = None,
+        fields: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Create a new thread in an automation run.
+
+        Args:
+            automation_run_id: The automation run ID.
+            elapsed_observed: Observed execution time in microseconds.
+            elapsed_computed: Computed execution time in microseconds.
+            artifacts: List of artifact objects.
+            fields: List of field objects.
+
+        Returns:
+            Dict with the created thread ID: {"id": <int>}.
+        """
+        data: dict[str, Any] = {}
+        if elapsed_observed is not None:
+            data["elapsed_observed"] = elapsed_observed
+        if elapsed_computed is not None:
+            data["elapsed_computed"] = elapsed_computed
+        if artifacts:
+            data["artifacts"] = artifacts
+        if fields:
+            data["fields"] = fields
+
+        return await self._request(
+            "POST",
+            f"/automation/runs/{automation_run_id}/threads",
+            data=data if data else None,
+        )
+
+    async def append_automation_run_thread(
+        self,
+        thread_id: int,
+        elapsed_observed: int | None = None,
+        elapsed_computed: int | None = None,
+        artifacts: list[dict[str, Any]] | None = None,
+        fields: list[dict[str, Any]] | None = None,
+        tests: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Append results, artifacts, or fields to an automation run thread.
+
+        Args:
+            thread_id: The automation run thread ID.
+            elapsed_observed: Partial observed time in microseconds to add.
+            elapsed_computed: Partial computed time in microseconds to add.
+            artifacts: List of artifact objects to append.
+            fields: List of field objects to append.
+            tests: List of test result objects to append.
+
+        Returns:
+            Success status (HTTP 204).
+        """
+        data: dict[str, Any] = {}
+        if elapsed_observed is not None:
+            data["elapsed_observed"] = elapsed_observed
+        if elapsed_computed is not None:
+            data["elapsed_computed"] = elapsed_computed
+        if artifacts:
+            data["artifacts"] = artifacts
+        if fields:
+            data["fields"] = fields
+        if tests:
+            data["tests"] = tests
+
+        return await self._request(
+            "POST",
+            f"/automation/runs/threads/{thread_id}/append",
+            data=data,
+        )
+
+    async def complete_automation_run_thread(
+        self,
+        thread_id: int,
+        elapsed_observed: int | None = None,
+        elapsed_computed: int | None = None,
+    ) -> dict[str, Any]:
+        """
+        Mark an automation run thread as completed.
+
+        Args:
+            thread_id: The automation run thread ID.
+            elapsed_observed: Observed execution time in microseconds.
+            elapsed_computed: Computed execution time in microseconds.
+
+        Returns:
+            Success status (HTTP 204).
+        """
+        data: dict[str, Any] = {}
+        if elapsed_observed is not None:
+            data["elapsed_observed"] = elapsed_observed
+        if elapsed_computed is not None:
+            data["elapsed_computed"] = elapsed_computed
+
+        return await self._request(
+            "POST",
+            f"/automation/runs/threads/{thread_id}/complete",
+            data=data if data else None,
+        )
 
     # =========================================================================
     # Issue Connections

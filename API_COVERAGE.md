@@ -3,7 +3,7 @@
 This document tracks which Testmo REST API endpoints are covered by the MCP tools in this project. Use this to track API coverage and identify gaps when new Testmo API versions are released.
 
 **API Version**: 2.2.0
-**Last Updated**: 2026-01-26
+**Last Updated**: 2026-02-28
 
 ## Coverage Summary
 
@@ -12,17 +12,17 @@ This document tracks which Testmo REST API endpoints are covered by the MCP tool
 | Projects | 2 | 2 | 100% |
 | Folders | 4 | 4 | 100% |
 | Milestones | 2 | 2 | 100% |
-| Test Cases | 4 | 4 | 100% |
+| Test Cases | 5 | 5 | 100% |
 | Test Runs | 2 | 2 | 100% |
 | Run Results | 1 | 1 | 100% |
 | Sessions | 0 | 2 | 0% |
 | Case Attachments | 3 | 3 | 100% |
 | Automation Sources | 2 | 2 | 100% |
-| Automation Runs | 2 | 7 | 29% |
+| Automation Runs | 8 | 8 | 100% |
 | Users | 0 | 4 | 0% |
 | Groups | 0 | 2 | 0% |
 | Roles | 0 | 2 | 0% |
-| **Total** | **22** | **37** | **59%** |
+| **Total** | **29** | **37** | **78%** |
 
 ## Detailed Coverage
 
@@ -57,7 +57,8 @@ This document tracks which Testmo REST API endpoints are covered by the MCP tool
 |----------|--------|----------|--------|
 | `/api/v1/projects/{project_id}/cases` | GET | `testmo_list_cases`, `testmo_get_all_cases`, `testmo_search_cases` | Covered |
 | `/api/v1/projects/{project_id}/cases` | POST | `testmo_create_case`, `testmo_create_cases`, `testmo_batch_create_cases` | Covered |
-| `/api/v1/projects/{project_id}/cases` | PATCH | `testmo_update_case` | Covered |
+| `/api/v1/projects/{project_id}/cases/{case_id}` | PUT | `testmo_update_case` | Covered |
+| `/api/v1/projects/{project_id}/cases` | PATCH | `testmo_batch_update_cases` | Covered |
 | `/api/v1/projects/{project_id}/cases` | DELETE | `testmo_delete_case`, `testmo_batch_delete_cases` | Covered |
 
 **Additional Tools**: `testmo_get_case` (individual case retrieval)
@@ -102,13 +103,13 @@ This document tracks which Testmo REST API endpoints are covered by the MCP tool
 | Endpoint | Method | MCP Tool | Status |
 |----------|--------|----------|--------|
 | `/api/v1/projects/{project_id}/automation/runs` | GET | `testmo_list_automation_runs` | Covered |
-| `/api/v1/projects/{project_id}/automation/runs` | POST | - | Not Covered |
+| `/api/v1/projects/{project_id}/automation/runs` | POST | `testmo_create_automation_run` | Covered |
 | `/api/v1/automation/runs/{automation_run_id}` | GET | `testmo_get_automation_run` | Covered |
-| `/api/v1/automation/runs/{automation_run_id}/append` | POST | - | Not Covered |
-| `/api/v1/automation/runs/{automation_run_id}/complete` | POST | - | Not Covered |
-| `/api/v1/automation/runs/{automation_run_id}/threads` | POST | - | Not Covered |
-| `/api/v1/automation/runs/threads/{thread_id}/append` | POST | - | Not Covered |
-| `/api/v1/automation/runs/threads/{thread_id}/complete` | POST | - | Not Covered |
+| `/api/v1/automation/runs/{automation_run_id}/append` | POST | `testmo_append_automation_run` | Covered |
+| `/api/v1/automation/runs/{automation_run_id}/complete` | POST | `testmo_complete_automation_run` | Covered |
+| `/api/v1/automation/runs/{automation_run_id}/threads` | POST | `testmo_create_automation_run_thread` | Covered |
+| `/api/v1/automation/runs/threads/{thread_id}/append` | POST | `testmo_append_automation_run_thread` | Covered |
+| `/api/v1/automation/runs/threads/{thread_id}/complete` | POST | `testmo_complete_automation_run_thread` | Covered |
 
 ### Users
 
@@ -144,16 +145,23 @@ These tools don't map directly to API endpoints but provide additional functiona
 
 ## Not Covered (Planned for Future)
 
-### High Priority
-- **Sessions**: Manual testing session management
-- **Automation Run Operations**: Create, append, complete automation runs and threads
-
 ### Medium Priority
 - **Users**: User listing and details
 - **Groups**: Group management
 - **Roles**: Role management
 
 ## Changelog
+
+### 2026-02-28
+- Added `testmo_create_automation_run` tool (POST create run)
+- Added `testmo_append_automation_run` tool (POST append artifacts/fields/links)
+- Added `testmo_complete_automation_run` tool (POST mark run complete)
+- Added `testmo_create_automation_run_thread` tool (POST create thread)
+- Added `testmo_append_automation_run_thread` tool (POST submit test results)
+- Added `testmo_complete_automation_run_thread` tool (POST mark thread complete)
+- Added `testmo_batch_update_cases` tool (PATCH bulk update cases with automation_links)
+- Automation Runs coverage: 29% → 100% (8/8 endpoints)
+- Overall coverage: 59% → 78% (29/37 endpoints)
 
 ### 2026-01-26
 - Added `testmo_get_milestone` tool
