@@ -557,7 +557,7 @@ class TestmoClient:
         self, project_id: int, case_id: int, data: dict[str, Any]
     ) -> dict[str, Any]:
         """
-        Update a test case.
+        Update a single test case via the bulk PATCH endpoint.
 
         Args:
             project_id: The project ID.
@@ -567,12 +567,11 @@ class TestmoClient:
         Returns:
             Updated test case object.
         """
-        result = await self._request(
-            "PUT",
-            f"/projects/{project_id}/cases/{case_id}",
-            data=data,
-        )
-        return result.get("result", result)
+        result = await self.batch_update_cases(project_id, [case_id], data)
+        # batch_update_cases returns list; extract the single case
+        if isinstance(result, list) and len(result) == 1:
+            return result[0]
+        return result
 
     async def batch_update_cases(
         self,
@@ -604,7 +603,7 @@ class TestmoClient:
 
     async def delete_case(self, project_id: int, case_id: int) -> dict[str, Any]:
         """
-        Delete a test case.
+        Delete a single test case via the bulk DELETE endpoint.
 
         Args:
             project_id: The project ID.
@@ -613,39 +612,26 @@ class TestmoClient:
         Returns:
             Success status.
         """
-        return await self._request(
-            "DELETE", f"/projects/{project_id}/cases/{case_id}"
-        )
+        return await self.batch_delete_cases(project_id, [case_id])
 
     async def batch_delete_cases(
         self, project_id: int, case_ids: list[int]
     ) -> dict[str, Any]:
         """
-        Delete multiple test cases.
+        Delete up to 100 test cases in a single request.
 
         Args:
             project_id: The project ID.
-            case_ids: List of test case IDs to delete.
+            case_ids: List of test case IDs to delete (max 100).
 
         Returns:
-            Result with success count and any errors.
+            Success status (204 No Content from API).
         """
-        deleted: list[int] = []
-        errors: list[str] = []
-
-        for case_id in case_ids:
-            try:
-                await self.delete_case(project_id, case_id)
-                deleted.append(case_id)
-            except TestmoAPIError as e:
-                errors.append(f"Case {case_id}: {e.message}")
-            await asyncio.sleep(self.RATE_LIMIT_DELAY)
-
-        return {
-            "deleted": deleted,
-            "total_deleted": len(deleted),
-            "errors": errors if errors else None,
-        }
+        return await self._request(
+            "DELETE",
+            f"/projects/{project_id}/cases",
+            data={"ids": case_ids},
+        )
 
     # =========================================================================
     # Search
