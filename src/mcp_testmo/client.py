@@ -234,6 +234,7 @@ class TestmoClient:
         project_id: int,
         name: str,
         parent_id: int | None = None,
+        docs: str | None = None,
     ) -> dict[str, Any]:
         """
         Create a folder in a project.
@@ -242,6 +243,9 @@ class TestmoClient:
             project_id: The project ID.
             name: Folder name.
             parent_id: Parent folder ID (None for root level).
+            docs: Folder documentation / reference field. Useful for storing
+                a link back to a source-of-truth (e.g., a Jira ticket URL).
+                Accepts HTML.
 
         Returns:
             Created folder object.
@@ -249,6 +253,8 @@ class TestmoClient:
         folder_data: dict[str, Any] = {"name": name}
         if parent_id:
             folder_data["parent_id"] = parent_id
+        if docs is not None:
+            folder_data["docs"] = docs
 
         result = await self._request(
             "POST", f"/projects/{project_id}/folders", data={"folders": [folder_data]}
@@ -262,6 +268,7 @@ class TestmoClient:
         folder_id: int,
         name: str | None = None,
         parent_id: int | None = None,
+        docs: str | None = None,
     ) -> dict[str, Any]:
         """
         Update a folder.
@@ -271,6 +278,9 @@ class TestmoClient:
             folder_id: The folder ID.
             name: New folder name (optional).
             parent_id: New parent folder ID (optional).
+            docs: New folder documentation / reference (optional). Useful for
+                storing a link back to a source-of-truth (e.g., a Jira ticket URL).
+                Accepts HTML. Pass an empty string to clear.
 
         Returns:
             Updated folder object.
@@ -280,6 +290,8 @@ class TestmoClient:
             data["name"] = name
         if parent_id is not None:
             data["parent_id"] = parent_id
+        if docs is not None:
+            data["docs"] = docs
 
         result = await self._request(
             "PUT", f"/projects/{project_id}/folders/{folder_id}", data=data

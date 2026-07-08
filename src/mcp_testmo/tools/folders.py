@@ -79,6 +79,15 @@ async def get_folder(client: TestmoClient, args: dict[str, Any]) -> Any:
                 "type": "integer",
                 "description": "Parent folder ID (optional, omit for root level)",
             },
+            "docs": {
+                "type": "string",
+                "description": (
+                    "Folder documentation / reference field (optional). "
+                    "Useful for storing a link back to a source-of-truth "
+                    "(e.g., '<p>https://swiftotter.atlassian.net/browse/SWM-914</p>'). "
+                    "Accepts HTML."
+                ),
+            },
         },
         "required": ["project_id", "name"],
     },
@@ -89,12 +98,13 @@ async def create_folder(client: TestmoClient, args: dict[str, Any]) -> Any:
         args["project_id"],
         args["name"],
         args.get("parent_id"),
+        args.get("docs"),
     )
 
 
 @register_tool(
     name="testmo_update_folder",
-    description="Update a folder's name or parent.",
+    description="Update a folder's name, parent, or docs reference field.",
     input_schema={
         "type": "object",
         "properties": {
@@ -114,6 +124,15 @@ async def create_folder(client: TestmoClient, args: dict[str, Any]) -> Any:
                 "type": "integer",
                 "description": "New parent folder ID (optional)",
             },
+            "docs": {
+                "type": "string",
+                "description": (
+                    "New folder documentation / reference field (optional). "
+                    "Useful for linking the folder to a source-of-truth "
+                    "(e.g., '<p>https://swiftotter.atlassian.net/browse/SWM-914</p>'). "
+                    "Accepts HTML. Pass an empty string to clear."
+                ),
+            },
         },
         "required": ["project_id", "folder_id"],
     },
@@ -125,6 +144,7 @@ async def update_folder(client: TestmoClient, args: dict[str, Any]) -> Any:
         args["folder_id"],
         args.get("name"),
         args.get("parent_id"),
+        args.get("docs"),
     )
 
 
