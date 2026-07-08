@@ -52,6 +52,8 @@ coverage.xml
 
 # Environments
 .env
+.env.*
+!.env.example
 .venv
 env/
 venv/
@@ -80,3 +82,7 @@ Thumbs.db
 
 # API reference files
 testmo-api-v1.json
+
+# SwiftOtter project artifacts (not part of the MCP server code)
+test-case-builder-workflow.md
+RESUMPTION-NOTES.md

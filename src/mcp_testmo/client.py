@@ -565,20 +565,58 @@ class TestmoClient:
             "errors": errors if errors else None,
         }
 
+    # Fields the Testmo PATCH endpoint requires on every update, even
+    # when the caller isn't changing them. When the caller supplies a
+    # partial update that omits these, we fetch the existing case and
+    # merge the current values in so the caller doesn't have to.
+    _UPDATE_CASE_REQUIRED_FIELDS = (
+        "custom_browser",
+        "custom_browser_version",
+        "custom_device",
+    )
+
     async def update_case(
         self, project_id: int, case_id: int, data: dict[str, Any]
     ) -> dict[str, Any]:
         """
         Update a single test case via the bulk PATCH endpoint.
 
+        Testmo's PATCH endpoint requires certain custom fields (browser,
+        browser version, device) even when they aren't being changed. This
+        method auto-fetches the existing case and merges any required fields
+        the caller didn't supply, so partial updates like
+        ``{"name": "New name"}`` just work.
+
         Args:
             project_id: The project ID.
             case_id: The test case ID.
-            data: Fields to update.
+            data: Fields to update. Only include fields you want to change;
+                required custom fields are preserved automatically.
 
         Returns:
             Updated test case object.
         """
+        # If any required fields are missing, fetch and merge them in
+        missing = [
+            f for f in self._UPDATE_CASE_REQUIRED_FIELDS if f not in data
+        ]
+        if missing:
+            existing = await self.get_case(project_id, case_id)
+            merged_data = dict(data)
+            for field in missing:
+                value = existing.get(field)
+                # The GET response wraps these as [{id, name}, ...] objects,
+                # but the PATCH endpoint expects [id, id, ...] bare IDs.
+                if isinstance(value, list):
+                    normalized = [
+                        item.get("id") if isinstance(item, dict) else item
+                        for item in value
+                    ]
+                    merged_data[field] = [n for n in normalized if n is not None]
+                elif value is not None:
+                    merged_data[field] = value
+            data = merged_data
+
         result = await self.batch_update_cases(project_id, [case_id], data)
         # batch_update_cases returns list; extract the single case
         if isinstance(result, list) and len(result) == 1:
@@ -649,6 +687,24 @@ class TestmoClient:
     # Search
     # =========================================================================
 
+    # Fields kept when summary_only=True on search_cases. Everything else
+    # (custom_steps, custom_expected, custom_preconditions, etc.) is dropped
+    # to keep responses compact — Testmo case bodies can be huge and easily
+    # overflow LLM context when scanning many cases at once.
+    _SEARCH_SUMMARY_FIELDS = (
+        "id",
+        "key",
+        "name",
+        "folder_id",
+        "state_id",
+        "status_id",
+        "tags",
+        "issues",
+        "custom_priority",
+        "created_at",
+        "updated_at",
+    )
+
     async def search_cases(
         self,
         project_id: int,
@@ -657,10 +713,19 @@ class TestmoClient:
         tags: list[str] | None = None,
         state_id: int | None = None,
         page: int = 1,
-        per_page: int = 100,
+        per_page: int = 25,
+        summary_only: bool = True,
     ) -> dict[str, Any]:
         """
         Search for test cases with filters.
+
+        By default, results are returned in ``summary_only`` mode: each case
+        is stripped to core identifying fields (id, key, name, folder_id,
+        state_id, tags, issues, priority, timestamps). This keeps responses
+        compact enough to scan through many results without overflowing LLM
+        context. Full case bodies (steps, expected, preconditions, HTML
+        content) are dropped in summary mode — fetch specific cases with
+        ``get_case`` when you need the full body.
 
         Args:
             project_id: The project ID.
@@ -669,7 +734,10 @@ class TestmoClient:
             tags: Filter by tags.
             state_id: Filter by state.
             page: Page number.
-            per_page: Results per page.
+            per_page: Results per page. Default 25 (down from Testmo's 100)
+                to keep responses small when combined with summary_only.
+            summary_only: When True (default), strip each case to core
+                identifying fields. Set False for full case bodies.
 
         Returns:
             Paginated search results.
@@ -684,9 +752,23 @@ class TestmoClient:
         if state_id:
             params["state_id"] = state_id
 
-        return await self._request(
+        result = await self._request(
             "GET", f"/projects/{project_id}/cases", params=params
         )
+
+        if summary_only:
+            cases = result.get("result", result if isinstance(result, list) else [])
+            if isinstance(cases, list):
+                summarized = [
+                    {k: case.get(k) for k in self._SEARCH_SUMMARY_FIELDS if k in case}
+                    for case in cases
+                ]
+                if isinstance(result, dict):
+                    result = {**result, "result": summarized}
+                else:
+                    result = summarized
+
+        return result
 
     # =========================================================================
     # Test Runs

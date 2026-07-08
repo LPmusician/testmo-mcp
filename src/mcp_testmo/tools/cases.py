@@ -200,6 +200,11 @@ async def batch_create_cases(client: TestmoClient, args: dict[str, Any]) -> Any:
     name="testmo_update_case",
     description="""Update an existing test case. Only include fields you want to change.
 
+Partial updates are safe: fields Testmo's PATCH endpoint requires
+(custom_browser, custom_browser_version, custom_device) are automatically
+preserved from the existing case if you don't supply them. You can update a
+single field (e.g., {"name": "New name"}) without a 422 error.
+
 Issue Linking (Enhanced API - Jan 2026):
 Link external issues using flexible issue objects instead of internal IDs:
 - issues: [{"display_id": "PROJ-123", "integration_id": 1, "connection_project_id": "org/repo"}]
@@ -372,7 +377,14 @@ async def batch_delete_cases(client: TestmoClient, args: dict[str, Any]) -> Any:
 
 @register_tool(
     name="testmo_search_cases",
-    description="Search for test cases with filters (query, folder, tags, state).",
+    description="""Search for test cases with filters (query, folder, tags, state).
+
+By default returns cases in summary form — id, key, name, folder_id, state_id,
+tags, issues, priority, timestamps only. Full case bodies (custom_steps,
+custom_expected, custom_preconditions, HTML content) are stripped out to keep
+responses compact enough to scan through many results without overflowing
+context. Set summary_only=false to get full case bodies, or use
+testmo_get_case for individual cases you actually need in full.""",
     input_schema={
         "type": "object",
         "properties": {
@@ -403,8 +415,12 @@ async def batch_delete_cases(client: TestmoClient, args: dict[str, Any]) -> Any:
             },
             "per_page": {
                 "type": "integer",
-                "description": "Results per page (default: 100). Valid values: 25, 50, 100",
+                "description": "Results per page (default: 25). Valid values: 25, 50, 100",
                 "enum": [25, 50, 100],
+            },
+            "summary_only": {
+                "type": "boolean",
+                "description": "When true (default), strip each case to core identifying fields (id, key, name, folder_id, state_id, tags, issues, priority, timestamps). Set false to get full case bodies.",
             },
         },
         "required": ["project_id"],
@@ -419,5 +435,6 @@ async def search_cases(client: TestmoClient, args: dict[str, Any]) -> Any:
         args.get("tags"),
         args.get("state_id"),
         args.get("page", 1),
-        args.get("per_page", 100),
+        args.get("per_page", 25),
+        args.get("summary_only", True),
     )
