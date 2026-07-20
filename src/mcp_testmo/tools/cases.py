@@ -107,27 +107,44 @@ async def get_case(client: TestmoClient, args: dict[str, Any]) -> Any:
 Required fields:
 - name: Test case title
 - folder_id: Target folder ID (0 for root)
-- custom_priority: Priority ID (52=Critical, 1=High, 2=Medium, 3=Low)
-- custom_type: Type ID (59=Functional, 64=Acceptance, 55=Security)
-- custom_creator: Creator ID (51=AI Generated)
-- custom_milestone_id: Milestone string (e.g., "release/5.2.0")
-- custom_references: Jira key (e.g., "IUG-1169")
-- custom_issues_tags_and_configurations_added: 66=Yes, 67=No
-- custom_confluence_url: Confluence URL
-- custom_feature: Rich HTML with Gherkin scenario
-- configurations: Platform IDs array (4=Admin Portal, 5=iOS & Android, 10=Insti Web)
+- custom_priority: Priority ID (52=Critical, 1=High, 2=Medium, 3=Low; SwiftOtter default: 33)
+- template_id: 2=Steps Table (SwiftOtter default), 4=BDD/Gherkin
+- custom_expected: HTML string with the expected outcome
+- custom_steps: Array of step objects (see Steps below)
+
+Auto-filled if you omit them (SwiftOtter Normal QA profile):
+- custom_browser: [12] (Chrome)
+- custom_browser_version: [20] (Latest)
+- custom_device: [25] (Desktop)
+
+Steps:
+Each step is either {"content": "...", "expected": "..."} (friendly aliases)
+or {"text1": "...", "text3": "..."} (Testmo's native schema). Both work —
+this wrapper translates content→text1 and expected→text3 automatically.
 
 Optional fields:
-- template_id: 4=BDD/Gherkin (default), 1=Steps Table
 - state_id: 1=Draft (default), 2=Review, 3=Approved, 4=Active, 5=Deprecated
-- tags: Array of strings (domain, tier-type, scope tags)
+- tags: Array of strings
+- custom_preconditions: HTML string
 - issues: Array of issue objects to link (see Issue Linking below)
 
-Issue Linking (Enhanced API - Jan 2026):
-Link external issues using flexible issue objects instead of internal IDs:
-- issues: [{"display_id": "PROJ-123", "integration_id": 1, "connection_project_id": "org/repo"}]
+Issue Linking:
+Some templates (notably template_id=2 / Steps Table) reject the `issues[]`
+array on POST. This wrapper handles that automatically: if you supply
+`issues`, the case is created first without them, then a follow-up
+`update_case` attaches them. The returned case reflects the post-attach
+state.
 
-Use testmo_list_issue_connections to discover integration_id and connection_project_id values.""",
+Payload format for each issue:
+- {"display_id": "PROJ-123", "integration_id": 1, "connection_project_id": 11641}
+
+`connection_project_id` must be an integer (the Jira project's numeric ID),
+NOT a string. Discover valid values via `testmo_list_issue_connections`.
+
+Not all fields are honored by all templates. `custom_type`, `custom_creator`,
+`tags`, and `custom_features` may be silently dropped or rejected under
+`template_id=2` — set them via update_case afterward if needed, or use
+`template_id=4` (BDD/Gherkin) if you need those fields on create.""",
     input_schema={
         "type": "object",
         "properties": {
@@ -150,7 +167,16 @@ async def create_case(client: TestmoClient, args: dict[str, Any]) -> Any:
 
 @register_tool(
     name="testmo_create_cases",
-    description="Create multiple test cases in a batch (max 100 per call).",
+    description="""Create multiple test cases in a batch (max 100 per call).
+
+Same auto-normalization as testmo_create_case applies to every case:
+- Browser/device fields default to Chrome/Latest/Desktop if omitted.
+- Steps accept {content, expected} or {text1, text3} — both work.
+
+Note on issues[]: this bulk-create tool does NOT auto-attach issues
+(unlike testmo_create_case). If you need issues linked, use
+testmo_create_case (per-case) or follow up this call with
+testmo_update_case for each returned case.""",
     input_schema={
         "type": "object",
         "properties": {
@@ -174,7 +200,18 @@ async def create_cases(client: TestmoClient, args: dict[str, Any]) -> Any:
 
 @register_tool(
     name="testmo_batch_create_cases",
-    description="Create any number of test cases, automatically handling batching (100 per request).",
+    description="""Create any number of test cases, automatically handling batching (100 per request).
+
+Same auto-normalization as testmo_create_case applies to every case
+(browser/device defaults, step alias translation).
+
+Error surfacing: if a batch fails with an opaque 422, this method
+automatically retries each case in that batch individually so the returned
+`errors` array names the specific case(s) that are bad. Successful cases
+in a failed batch are still created.
+
+Note on issues[]: this tool does NOT auto-attach issues. See
+testmo_create_cases / testmo_create_case if issue linking is needed.""",
     input_schema={
         "type": "object",
         "properties": {

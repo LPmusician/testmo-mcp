@@ -470,16 +470,70 @@ class TestmoClient:
         Get details of a specific test case.
 
         Args:
-            project_id: The project ID.
+            project_id: The project ID (accepted for API symmetry but unused —
+                Testmo's single-case GET endpoint doesn't scope by project;
+                case IDs are globally unique).
             case_id: The test case ID.
 
         Returns:
             Test case object with full details.
         """
-        result = await self._request(
-            "GET", f"/projects/{project_id}/cases/{case_id}"
-        )
+        # Testmo's single-case GET is `/cases/{id}`, not
+        # `/projects/{project_id}/cases/{case_id}` (that path returns 404).
+        # Keep the project_id parameter for backwards-compatible signatures.
+        result = await self._request("GET", f"/cases/{case_id}")
         return result.get("result", result)
+
+    # Fields Testmo's POST endpoint requires on every case, even when the
+    # caller doesn't explicitly set them. When missing, we default to the
+    # SwiftOtter Normal QA profile (Chrome, Latest, Desktop) so callers
+    # don't have to memorize the required-field list.
+    _CREATE_CASE_DEFAULT_BROWSER = [12]  # Chrome
+    _CREATE_CASE_DEFAULT_BROWSER_VERSION = [20]  # Latest
+    _CREATE_CASE_DEFAULT_DEVICE = [25]  # Desktop
+
+    def _normalize_case_payload(self, case: dict[str, Any]) -> dict[str, Any]:
+        """
+        Normalize a single case payload for the Testmo API.
+
+        - Auto-fills required browser/device fields with SwiftOtter defaults
+          if the caller omitted them.
+        - Translates step objects from human-friendly ``{content, expected}``
+          keys to Testmo's native ``{text1, text3}`` schema.
+        - Leaves everything else alone.
+
+        Returns a new dict; does not mutate the input.
+        """
+        normalized = dict(case)
+
+        # Browser/device defaults
+        if "custom_browser" not in normalized:
+            normalized["custom_browser"] = list(self._CREATE_CASE_DEFAULT_BROWSER)
+        if "custom_browser_version" not in normalized:
+            normalized["custom_browser_version"] = list(
+                self._CREATE_CASE_DEFAULT_BROWSER_VERSION
+            )
+        if "custom_device" not in normalized:
+            normalized["custom_device"] = list(self._CREATE_CASE_DEFAULT_DEVICE)
+
+        # Step field translation
+        steps = normalized.get("custom_steps")
+        if isinstance(steps, list):
+            translated_steps = []
+            for step in steps:
+                if not isinstance(step, dict):
+                    translated_steps.append(step)
+                    continue
+                new_step = dict(step)
+                # Accept content/expected as friendlier aliases for text1/text3.
+                if "content" in new_step and "text1" not in new_step:
+                    new_step["text1"] = new_step.pop("content")
+                if "expected" in new_step and "text3" not in new_step:
+                    new_step["text3"] = new_step.pop("expected")
+                translated_steps.append(new_step)
+            normalized["custom_steps"] = translated_steps
+
+        return normalized
 
     async def create_case(
         self, project_id: int, case_data: dict[str, Any]
@@ -487,16 +541,50 @@ class TestmoClient:
         """
         Create a single test case.
 
+        Auto-normalization applied (see ``_normalize_case_payload``):
+        - Browser/device fields default to SwiftOtter Normal QA profile
+          (Chrome / Latest / Desktop) when omitted.
+        - ``custom_steps`` entries accept ``{content, expected}`` as aliases
+          for Testmo's native ``{text1, text3}`` schema.
+
+        If ``issues`` is present in ``case_data``, this method creates the
+        case first (without issues, since some templates reject issues[] on
+        POST) and then follows up with an ``update_case`` to attach them.
+        The returned case reflects the post-update state.
+
         Args:
             project_id: The project ID.
             case_data: Test case data.
 
         Returns:
-            Created test case object.
+            Created test case object (with issues attached if supplied).
         """
-        result = await self.create_cases(project_id, [case_data])
+        # Separate issues out — Testmo's template_id=2 rejects issues[]
+        # on POST, so we attach via a follow-up update.
+        pending_issues = case_data.get("issues")
+        payload = dict(case_data)
+        if pending_issues is not None:
+            payload.pop("issues", None)
+
+        result = await self.create_cases(project_id, [payload])
         cases = result.get("result", [])
-        return cases[0] if cases else result
+        created = cases[0] if cases else result
+
+        if pending_issues and isinstance(created, dict) and "id" in created:
+            try:
+                updated = await self.update_case(
+                    project_id,
+                    created["id"],
+                    {"issues": pending_issues},
+                )
+                if isinstance(updated, dict):
+                    return updated
+            except TestmoAPIError:
+                # Bubble the create result even if the issue-attach fails —
+                # caller can retry the link separately.
+                pass
+
+        return created
 
     async def create_cases(
         self, project_id: int, cases: list[dict[str, Any]]
@@ -520,10 +608,12 @@ class TestmoClient:
                 "Use batch_create_cases for larger batches."
             )
 
+        normalized = [self._normalize_case_payload(c) for c in cases]
+
         return await self._request(
             "POST",
             f"/projects/{project_id}/cases",
-            data={"cases": cases},
+            data={"cases": normalized},
         )
 
     async def batch_create_cases(
@@ -532,17 +622,23 @@ class TestmoClient:
         """
         Create test cases in batches (handles any number of cases).
 
+        When a batch fails with an opaque validation error, this method falls
+        back to per-case creates for that batch so the caller sees exactly
+        which case(s) triggered the error, indexed by their position in the
+        input list. Successful cases in the failed batch are still created.
+
         Args:
             project_id: The project ID.
             cases: List of test case objects.
 
         Returns:
-            Combined result with all created cases and any errors.
+            Combined result with all created cases and any errors. Errors
+            include the input-list index so the caller can identify the
+            bad case's payload.
         """
         all_created: list[dict[str, Any]] = []
         errors: list[str] = []
 
-        # Split into batches
         for i in range(0, len(cases), self.MAX_CASES_PER_REQUEST):
             batch = cases[i : i + self.MAX_CASES_PER_REQUEST]
             batch_num = (i // self.MAX_CASES_PER_REQUEST) + 1
@@ -551,10 +647,30 @@ class TestmoClient:
                 result = await self.create_cases(project_id, batch)
                 created = result.get("result", [])
                 all_created.extend(created)
-            except TestmoAPIError as e:
-                errors.append(f"Batch {batch_num}: {e.message}")
+            except TestmoAPIError as batch_err:
+                # Batch failed with an opaque error. Retry per-case so we
+                # can surface which specific case(s) are bad. Successful
+                # cases in the batch still get created.
+                errors.append(
+                    f"Batch {batch_num} bulk create failed: {batch_err.message}. "
+                    f"Retrying per-case to isolate."
+                )
+                for j, case in enumerate(batch):
+                    input_index = i + j
+                    try:
+                        single_result = await self.create_cases(project_id, [case])
+                        single_created = single_result.get("result", [])
+                        all_created.extend(single_created)
+                    except TestmoAPIError as single_err:
+                        errors.append(
+                            f"Case at index {input_index} "
+                            f"(name={case.get('name', '<unnamed>')}): "
+                            f"{single_err.message}"
+                        )
+                        if single_err.details:
+                            errors.append(f"  details: {single_err.details}")
+                    await asyncio.sleep(self.RATE_LIMIT_DELAY)
 
-            # Rate limiting between batches
             if i + self.MAX_CASES_PER_REQUEST < len(cases):
                 await asyncio.sleep(self.RATE_LIMIT_DELAY)
 
